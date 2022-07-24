@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use serenity::prelude::TypeMapKey;
-use crate::services::util::cache_tools::{Cache};
+use crate::services::util::cache_tools::{Cache, CachedValue};
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -41,12 +41,26 @@ pub struct ChampionMastery {
 
 }
 
+
+
 // riot api modeling stuff
 pub struct RiotAPI {
     client: reqwest::Client,
     api_key: String,
+    info: RiotAPIInfo,
+    cache: RiotAPICache,
+}
+
+/// info such as routes for the riot api
+pub struct RiotAPIInfo {
+    dd_url: String,
+}
+
+/// data cache for the riot api
+pub struct RiotAPICache {
+    game_version: CachedValue<String>,
     summoner_id_cache: Cache<String, NameToId>,
-    mastery_cache: Cache<String, Vec<ChampionMastery>>
+    mastery_cache: Cache<String, Vec<ChampionMastery>>,
 }
 
 impl TypeMapKey for RiotAPI {
@@ -54,25 +68,49 @@ impl TypeMapKey for RiotAPI {
 }
 
 impl RiotAPI {
-
     /// create a new riot api instance
     pub fn new(client: reqwest::Client, api_key: String) -> RiotAPI {
-        return RiotAPI{
+        let mut api = RiotAPI{
             client,
             api_key,
-            summoner_id_cache: Cache::new(1000 * 60 * 30),
-            mastery_cache: Cache::new(1000 * 60 * 10)
+            info: RiotAPIInfo {
+                dd_url: String::from("https://ddragon.leagueoflegends.com")
+            },
+            cache: RiotAPICache {
+                game_version: CachedValue::new_expired(String::new(), 1000 * 60 * 45),
+                summoner_id_cache: Cache::new(1000 * 60 * 30),
+                mastery_cache: Cache::new(1000 * 60 * 10)
+            }
+        };
+
+        return api;
+    }
+
+    /// get the league of legends game version
+    pub async fn get_game_version(&mut self) -> Result<String, reqwest::Error> {
+        let cache = &mut self.cache.game_version;
+        if !cache.expired() {
+            return Ok(cache.value.clone());
         }
+
+        let url = format!("{}/api/versions.json", self.info.dd_url);
+        let versions: Vec<String> = self.client.get(&url)
+            .send()
+            .await?
+            .json()
+            .await?;
+        return Ok(String::new())
     }
 
     /// get the summoner id from the given name
     pub async fn get_summoner_id(&mut self, name: &str) -> Result<NameToId, reqwest::Error> {
 
         let key = name.to_string();
+        let cache = &mut self.cache.summoner_id_cache;
 
         // get a cached value if it's not expired yet
-        if !self.summoner_id_cache.is_expired(&key) {
-            match self.summoner_id_cache.get(&key) {
+        if !cache.is_expired(&key) {
+            match cache.get(&key) {
                 None => {}
                 Some(val) => {
                     return Ok(val.value.clone())
@@ -80,39 +118,33 @@ impl RiotAPI {
             }
         }
 
-        let name_to_id = NameToId {
-            id: "".to_string(),
-            account_id: "".to_string(),
-            puuid: "".to_string(),
-            name: "".to_string(),
-            profile_icon_id: 0,
-            revision_date: 0,
-            summoner_level: 0
-        };
-
         let name_to_id: NameToId = self.client.get(format!("https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{}", name))
             .header("X-Riot-Token", &self.api_key)
-            .json(&name_to_id)
             .send()
             .await?
             .json()
             .await?;
 
-        self.summoner_id_cache.set(key, name_to_id.clone());
+        cache.set(key, name_to_id.clone());
         Ok(name_to_id)
     }
 
+    /// get the mastery data from the given name
     pub async fn get_mastery_from_name(&mut self, name: &str) -> Result<Vec<ChampionMastery>, reqwest::Error>{
         let name_to_id = self.get_summoner_id(name).await.expect("Failed to get summoner id");
         return self.get_mastery(name_to_id.id.as_str()).await;
     }
+
+    /// get the mastery information for the user
+    /// with the given summoner id
     pub async fn get_mastery(&mut self, id: &str) -> Result<Vec<ChampionMastery>, reqwest::Error> {
 
         let key = id.to_string();
+        let cache = &mut self.cache.mastery_cache;
 
         // get a cached value if it's not expired yet
-        if !self.mastery_cache.is_expired(&key) {
-            match self.mastery_cache.get(&key) {
+        if !cache.is_expired(&key) {
+            match cache.get(&key) {
                 None => {}
                 Some(val) => {
                     return Ok(val.value.clone())
@@ -120,17 +152,14 @@ impl RiotAPI {
             }
         }
 
-        let champion_mastery: Vec<ChampionMastery> = Vec::new();
-
         let champion_mastery: Vec<ChampionMastery> = self.client.get(format!("https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{}", id))
             .header("X-Riot-Token", &self.api_key)
-            .json(&champion_mastery)
             .send()
             .await?
             .json()
             .await?;
 
-        self.mastery_cache.set(key, champion_mastery.clone());
+        cache.set(key, champion_mastery.clone());
         Ok(champion_mastery)
     }
 }

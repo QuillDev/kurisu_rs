@@ -19,7 +19,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let riot_api_key = env::var("RIOT_API_KEY").expect("Expected riot API Key.");
     let discord_token = env::var("TOKEN").expect("Expected a token secret to be supplied.");
 
-    let riot_api = RiotAPI::new(reqwest, riot_api_key);
+    let mut riot_api = RiotAPI::new(reqwest, riot_api_key);
+
+    if let Err(why) = riot_api.get_game_version().await {
+        println!("{:?}", why)
+    }
+
     let mut handler = Handler::new();
     handler
         .register_slash_command(Box::new(Ping))
