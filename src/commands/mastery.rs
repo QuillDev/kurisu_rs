@@ -37,7 +37,7 @@ impl Command for Mastery {
             .as_ref()
             .expect("Expected object");
 
-        let mut content: String = "og".to_string();
+        let mut content: String = "".to_string();
         if let CommandDataOptionValue::String(value) = name_option {
             let mut data = ctx.data.write().await;
             let mut services = data.get_mut::<RiotAPI>().expect("test");
