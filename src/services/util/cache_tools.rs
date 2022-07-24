@@ -33,11 +33,6 @@ impl<K: Eq + Hash, V> Cache<K, V> {
         return self.map.get(key);
     }
 
-    /// check if it contains the given value
-    pub fn contains(&self, key: &K) -> bool {
-        return self.map.contains_key(key);
-    }
-
     /// check if the value at the given key is expired
     /// if the value does not exist, the value is expired.
     pub fn is_expired(&self, key: &K) -> bool {

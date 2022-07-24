@@ -5,12 +5,9 @@ mod commands;
 
 use std::env;
 use std::error::Error;
-use serenity::Client;
-use serenity::prelude::GatewayIntents;
 use crate::commands::mastery::Mastery;
 use crate::commands::ping::Ping;
 use crate::riot_api::RiotAPI;
-use crate::services::bundle::client_services::Services;
 use crate::services::discord::client::{create_client, Handler};
 use crate::services::riot::riot_api;
 

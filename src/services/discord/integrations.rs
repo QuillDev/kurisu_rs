@@ -1,4 +1,4 @@
-use serenity::builder::{CreateApplicationCommand, CreateInteractionResponse};
+use serenity::builder::{CreateApplicationCommand};
 use serenity::model::prelude::interaction::application_command::ApplicationCommandInteraction;
 use serenity::prelude::Context;
 

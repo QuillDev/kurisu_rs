@@ -1,15 +1,11 @@
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::env;
-use std::sync::Arc;
 use serenity::async_trait;
-use serenity::builder::{CreateApplicationCommand, CreateApplicationCommands, CreateInteractionResponse};
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
-use serenity::model::channel::Message;
+use serenity::model::application::interaction::Interaction;
 use serenity::model::gateway::Ready;
 use serenity::model::prelude::GuildId;
 use serenity::prelude::*;
-use crate::{RiotAPI, Services};
+use crate::{RiotAPI};
 use crate::services::discord::integrations::Command;
 
 pub struct Handler {
@@ -61,7 +57,7 @@ impl EventHandler for Handler {
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
-            if let Some(mut executor) = self.commands.get(&command.data.name) {
+            if let Some(executor) = self.commands.get(&command.data.name) {
                 // log error if it occurs while sending
                 executor.respond(&ctx, &command).await;
             }
