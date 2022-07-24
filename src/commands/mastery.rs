@@ -6,8 +6,10 @@ use serenity::prelude::Context;
 use crate::services::discord::integrations::Command;
 
 use async_trait::async_trait;
-use crate::{RiotAPI};
+use reqwest::Error;
+use crate::LeagueAPI;
 use crate::services::discord::util::send_basic_message;
+use crate::services::riot::models::ChampionMastery;
 
 pub struct Mastery;
 
@@ -33,23 +35,31 @@ impl Command for Mastery {
             .expect("Expected summoner name!")
             .resolved
             .as_ref()
-            .expect("Expected object");
+            .expect("Expected name option");
 
-        let mut content: String = "".to_string();
         if let CommandDataOptionValue::String(value) = name_option {
-            let mut data = ctx.data.write().await;
-            let riot_api = data.get_mut::<RiotAPI>().expect("test");
 
-            if let Ok(mastery) = riot_api.get_mastery_from_name(value).await {
-                match mastery.get(0) {
-                    None => {}
-                    Some(value) => {
-                        content = format!("{:?}", value);
+            // grab the league api
+            let mut data = ctx.data.write().await;
+            let league_api = data
+                .get_mut::<LeagueAPI>()
+                .expect("could not get league api");
+
+            // get mastery from the given name
+            match league_api.get_mastery_from_name(value).await {
+                // if the data is valid
+                Ok(data) => {
+                    match data.get(0) {
+                        Some(value) => send_basic_message(ctx, &interaction, format!("{:?}", value).as_str()).await,
+                        None => send_basic_message(ctx, &interaction, "Could not find champion data.").await,
                     }
+                }
+                // if the data is invalid
+                Err(err) => {
+                    send_basic_message(ctx, &interaction, "An error occurred.");
+                    println!("{:?}", err);
                 }
             }
         }
-
-        send_basic_message(ctx, &interaction, content.as_str()).await;
     }
 }

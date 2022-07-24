@@ -5,7 +5,7 @@ use serenity::model::application::interaction::Interaction;
 use serenity::model::gateway::Ready;
 use serenity::model::prelude::GuildId;
 use serenity::prelude::*;
-use crate::{RiotAPI};
+use crate::LeagueAPI;
 use crate::services::discord::integrations::Command;
 
 pub struct Handler {
@@ -65,11 +65,11 @@ impl EventHandler for Handler {
     }
 }
 
-pub async fn create_client(token: &str, handler: Handler, riot_api: RiotAPI) {
+pub async fn create_client(token: &str, handler: Handler, riot_api: LeagueAPI) {
     // create the client
     let mut client = Client::builder(token, GatewayIntents::empty())
         .event_handler(handler)
-        .type_map_insert::<RiotAPI>(riot_api)
+        .type_map_insert::<LeagueAPI>(riot_api)
         .await
         .expect("Error creating client.");
 

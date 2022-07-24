@@ -1,86 +1,51 @@
-use serde::{Serialize, Deserialize};
+use std::path::Path;
+use reqwest::Error;
 use serenity::prelude::TypeMapKey;
+use crate::download_file;
+use crate::services::riot::models::{ChampionMastery, NameToId};
 use crate::services::util::cache_tools::{Cache, CachedValue};
 
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct NameToId {
-    pub id: String,
-    #[serde(rename = "accountId")]
-    pub account_id: String,
-    pub puuid: String,
-    pub name: String,
-    #[serde(rename = "profileIconId")]
-    pub profile_icon_id: u32,
-    #[serde(rename = "revisionDate")]
-    pub revision_date: u128,
-    #[serde(rename = "summonerLevel")]
-    pub summoner_level: u32
+/// type map for the league api
+impl TypeMapKey for LeagueAPI {
+    type Value = LeagueAPI;
 }
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChampionMastery {
-    #[serde(rename = "championId")]
-    pub champion_id: u32,
-    #[serde(rename = "championLevel")]
-    pub champion_level: u8,
-    #[serde(rename = "championPoints")]
-    pub champion_points: u32,
-    #[serde(rename = "lastPlayTime")]
-    pub last_play_time: u128,
-    #[serde(rename = "championPointsSinceLastLevel")]
-    pub champion_points_since_last_level: u32,
-    #[serde(rename = "championPointsUntilNextLevel")]
-    pub champion_points_until_next_level: u32,
-    #[serde(rename = "chestGranted")]
-    pub chest_granted: bool,
-    #[serde(rename = "tokensEarned")]
-    pub tokens_earned: u8,
-    #[serde(rename = "summonerId")]
-    pub summoner_id: String,
-
-}
-
-
 
 // riot api modeling stuff
-pub struct RiotAPI {
+pub struct LeagueAPI {
     client: reqwest::Client,
     api_key: String,
-    info: RiotAPIInfo,
-    cache: RiotAPICache,
+    info: LeagueApiInfo,
+    cache: LeagueApiCache,
 }
 
 /// info such as routes for the riot api
-pub struct RiotAPIInfo {
+struct LeagueApiInfo {
     dd_url: String,
 }
 
 /// data cache for the riot api
-pub struct RiotAPICache {
+struct LeagueApiCache {
     game_version: CachedValue<String>,
     summoner_id_cache: Cache<String, NameToId>,
     mastery_cache: Cache<String, Vec<ChampionMastery>>,
 }
 
-impl TypeMapKey for RiotAPI {
-    type Value = RiotAPI;
-}
-
-impl RiotAPI {
+impl LeagueAPI {
     /// create a new riot api instance
-    pub fn new(client: reqwest::Client, api_key: String) -> RiotAPI {
-        let mut api = RiotAPI{
+    pub fn new(client: reqwest::Client, api_key: String) -> LeagueAPI {
+        let api = LeagueAPI {
             client,
             api_key,
-            info: RiotAPIInfo {
+            // info for endpoints in the riot api
+            info: LeagueApiInfo {
                 dd_url: String::from("https://ddragon.leagueoflegends.com")
             },
-            cache: RiotAPICache {
+            // cache info for stuff from the riot api
+            cache: LeagueApiCache {
                 game_version: CachedValue::new_expired(String::new(), 1000 * 60 * 45),
                 summoner_id_cache: Cache::new(1000 * 60 * 30),
-                mastery_cache: Cache::new(1000 * 60 * 10)
-            }
+                mastery_cache: Cache::new(1000 * 60 * 10),
+            },
         };
 
         return api;
@@ -93,18 +58,20 @@ impl RiotAPI {
             return Ok(cache.value.clone());
         }
 
+        // make the request to get the version
         let url = format!("{}/api/versions.json", self.info.dd_url);
         let versions: Vec<String> = self.client.get(&url)
             .send()
             .await?
             .json()
             .await?;
-        return Ok(String::new())
+
+        let version = versions.get(0).expect("Did not get version information");
+        return Ok(version.to_string().clone());
     }
 
     /// get the summoner id from the given name
     pub async fn get_summoner_id(&mut self, name: &str) -> Result<NameToId, reqwest::Error> {
-
         let key = name.to_string();
         let cache = &mut self.cache.summoner_id_cache;
 
@@ -113,7 +80,7 @@ impl RiotAPI {
             match cache.get(&key) {
                 None => {}
                 Some(val) => {
-                    return Ok(val.value.clone())
+                    return Ok(val.value.clone());
                 }
             }
         }
@@ -129,16 +96,39 @@ impl RiotAPI {
         Ok(name_to_id)
     }
 
+    /// get the latest data dragon data from riot
+    pub async fn get_latest_dd_data(&mut self) -> Result<String, String> {
+        return match self.get_game_version().await {
+            Ok(ver) => {
+                // check if the file exists
+                let path_string = format!("./cache/{}.tgz", ver);
+                let path = Path::new(&path_string);
+                if path.exists() {
+                    return Ok(String::from("File already downloaded."));
+                }
+
+                // download the file
+                let download = download_file(&self.client, format!("{}/cdn/dragontail-{}.tgz", self.info.dd_url, ver).as_str(), path).await;
+                return match download {
+                    Ok(_) => Ok(String::from("File downloaded!")),
+                    Err(err) => Err(err),
+                };
+            }
+            Err(err) => Err(err.to_string())
+        };
+    }
+
     /// get the mastery data from the given name
-    pub async fn get_mastery_from_name(&mut self, name: &str) -> Result<Vec<ChampionMastery>, reqwest::Error>{
-        let name_to_id = self.get_summoner_id(name).await.expect("Failed to get summoner id");
-        return self.get_mastery(name_to_id.id.as_str()).await;
+    pub async fn get_mastery_from_name(&mut self, name: &str) -> Result<Vec<ChampionMastery>, Error> {
+        return match self.get_summoner_id(name).await {
+            Ok(data) => self.get_mastery(data.id.as_str()).await,
+            Err(err) => Err(err)
+        };
     }
 
     /// get the mastery information for the user
     /// with the given summoner id
     pub async fn get_mastery(&mut self, id: &str) -> Result<Vec<ChampionMastery>, reqwest::Error> {
-
         let key = id.to_string();
         let cache = &mut self.cache.mastery_cache;
 
@@ -147,7 +137,7 @@ impl RiotAPI {
             match cache.get(&key) {
                 None => {}
                 Some(val) => {
-                    return Ok(val.value.clone())
+                    return Ok(val.value.clone());
                 }
             }
         }
